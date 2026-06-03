@@ -1,0 +1,40 @@
+{
+  "name": "tmux-helper",
+  "version": "0.1.0",
+  "description": "A desktop helper for common tmux terminal commands.",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "check": "node scripts/check-env.js",
+    "package:mac": "electron-builder --mac",
+    "package:dir": "electron-builder --dir"
+  },
+  "keywords": [
+    "tmux",
+    "electron",
+    "desktop"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^31.7.7",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "dev.local.tmux-helper",
+    "productName": "Tmux Helper",
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "icon": "build/icon.icns",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    }
+  }
+}

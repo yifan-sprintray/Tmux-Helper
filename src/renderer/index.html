@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tmux Helper</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">T</div>
+          <div>
+            <h1>Tmux Helper</h1>
+            <p id="tmuxStatus">Checking tmux...</p>
+          </div>
+        </div>
+
+        <nav class="view-nav" aria-label="Primary views">
+          <button id="sessionsNavButton" class="nav-button nav-button--active" type="button">Sessions</button>
+          <button id="settingsNavButton" class="nav-button secondary" type="button">Settings</button>
+        </nav>
+
+        <form id="createSessionForm" class="panel">
+          <label for="sessionName">New session</label>
+          <div class="inline-form">
+            <input id="sessionName" name="sessionName" autocomplete="off" placeholder="project-api" />
+            <button type="submit">Create</button>
+          </div>
+        </form>
+
+        <section class="command-list" aria-label="Command examples">
+          <button id="commandToggle" class="command-toggle secondary" type="button" aria-expanded="false">
+            <span>Command examples</span>
+            <span aria-hidden="true">Show</span>
+          </button>
+          <div id="commandExamples" class="command-examples" hidden>
+            <div class="command-row" data-command="tmux new-session -s project">
+              <code>tmux new-session -s project</code>
+              <button data-copy class="secondary">Copy</button>
+            </div>
+            <div class="command-row" data-command="tmux attach-session -t project">
+              <code>tmux attach-session -t project</code>
+              <button data-copy class="secondary">Copy</button>
+            </div>
+            <div class="command-row" data-command="tmux list-sessions">
+              <code>tmux list-sessions</code>
+              <button data-copy class="secondary">Copy</button>
+            </div>
+            <div class="command-row" data-command="tmux new-window -n logs">
+              <code>tmux new-window -n logs</code>
+              <button data-copy class="secondary">Copy</button>
+            </div>
+            <div class="command-row" data-command="tmux split-window -h">
+              <code>tmux split-window -h</code>
+              <button data-copy class="secondary">Copy</button>
+            </div>
+            <div class="command-row" data-command="tmux detach-client -s project">
+              <code>tmux detach-client -s project</code>
+              <button data-copy class="secondary">Copy</button>
+            </div>
+          </div>
+        </section>
+      </aside>
+
+      <section class="workspace">
+        <section id="sessionsView">
+          <header class="toolbar">
+            <div>
+              <h2>Sessions</h2>
+              <p id="summary">Loading current tmux sessions...</p>
+            </div>
+            <button id="refreshButton" class="secondary">Refresh</button>
+          </header>
+
+          <div id="alert" class="alert" hidden></div>
+          <div id="sessions" class="session-grid" aria-live="polite"></div>
+        </section>
+
+        <section id="controlView" class="control-view" hidden>
+          <header class="toolbar">
+            <div>
+              <h2 id="controlTitle">Session Control</h2>
+              <p id="controlSummary">Loading session windows...</p>
+            </div>
+            <button id="backButton" class="secondary">Back</button>
+          </header>
+
+          <div id="controlAlert" class="alert" hidden></div>
+          <div class="control-surface">
+            <div class="control-surface__header">
+              <div>
+                <h3>Controls</h3>
+                <p>Run commands against the attached tmux session.</p>
+              </div>
+              <button id="chooseTreeButton">choose-tree</button>
+            </div>
+            <div id="controlWindowButtons" class="window-buttons"></div>
+          </div>
+        </section>
+
+        <section id="settingsView" class="settings-view" hidden>
+          <header class="toolbar">
+            <div>
+              <h2>Settings</h2>
+              <p>Configure tmux and the terminal used for attachments.</p>
+            </div>
+          </header>
+
+          <div id="settingsAlert" class="alert" hidden></div>
+
+          <div class="settings-list">
+            <section class="settings-row">
+              <div>
+                <h3>tmux location</h3>
+                <p>Executable path used for every tmux command.</p>
+              </div>
+              <div class="settings-control settings-control--path">
+                <input id="tmuxPathInput" type="text" readonly value="Checking tmux..." aria-label="tmux executable path" />
+                <button id="selectTmuxButton" type="button">Choose Path</button>
+              </div>
+            </section>
+
+            <section class="settings-row settings-row--stacked">
+              <button id="terminalToggle" class="settings-expand-button secondary" type="button" aria-expanded="false">
+                <span>
+                  <strong>Run tmux in</strong>
+                  <small id="selectedTerminalLabel">Loading...</small>
+                </span>
+                <span aria-hidden="true">Show</span>
+              </button>
+              <div id="terminalOptions" class="terminal-options" hidden></div>
+            </section>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <template id="sessionTemplate">
+      <article class="session-card">
+        <div class="session-card__header">
+          <div>
+            <h3></h3>
+            <p class="meta"></p>
+          </div>
+          <span class="status-pill"></span>
+        </div>
+
+        <div class="session-card__actions">
+          <button data-action="attach">Attach</button>
+          <button data-action="newWindow" class="secondary">Window</button>
+          <button data-action="rename" class="secondary">Rename</button>
+          <button data-action="detach" class="secondary">Detach</button>
+        </div>
+
+        <form class="card-form card-form--closed" data-form="newWindow" aria-hidden="true">
+          <label>
+            <span>Window name</span>
+            <input name="windowName" autocomplete="off" placeholder="shell" disabled />
+          </label>
+          <button type="submit" disabled>Confirm</button>
+        </form>
+
+        <form class="card-form card-form--closed" data-form="rename" aria-hidden="true">
+          <label>
+            <span>Session name</span>
+            <input name="sessionName" autocomplete="off" disabled />
+          </label>
+          <button type="submit" disabled>Confirm</button>
+        </form>
+      </article>
+    </template>
+
+    <script src="./renderer.js"></script>
+  </body>
+</html>
