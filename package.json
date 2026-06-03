@@ -24,7 +24,11 @@
   "build": {
     "appId": "dev.local.tmux-helper",
     "productName": "Tmux Helper",
+    "asar": false,
     "files": [
+      "!**/.cache/**",
+      "!**/cache/**",
+      "!**/*.cache",
       "src/**/*",
       "package.json"
     ],

@@ -224,6 +224,46 @@ label,
   font-size: 12px;
 }
 
+.console-panel {
+  display: grid;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.console-panel__header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.console-panel__header h2 {
+  font-size: 14px;
+}
+
+.console-panel__header button {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+#commandConsole {
+  min-height: 120px;
+  max-height: 220px;
+  margin: 0;
+  overflow: auto;
+  border: 1px solid #28312e;
+  border-radius: 7px;
+  padding: 10px;
+  color: #dbe5e1;
+  background: #0d100f;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .workspace {
   min-width: 0;
   padding: 30px;
@@ -380,6 +420,13 @@ label,
   margin-bottom: 4px;
 }
 
+.control-surface__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .settings-list {
   display: grid;
   gap: 12px;
@@ -463,7 +510,6 @@ label,
 }
 
 .window-buttons button {
-  justify-content: flex-start;
   overflow: hidden;
   width: 100%;
   color: #07100d;
@@ -474,6 +520,12 @@ label,
 
 .window-buttons button.secondary {
   color: #dbe5e1;
+}
+
+.window-button--active {
+  border: 1px solid #a8f3cc;
+  box-shadow: 0 0 0 3px rgba(132, 224, 178, 0.16);
+  font-weight: 650;
 }
 
 .empty-state {
