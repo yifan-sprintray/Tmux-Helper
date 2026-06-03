@@ -201,11 +201,17 @@ function runTmux(args) {
   });
 }
 
+function splitTmuxFields(line) {
+  if (line.includes(TMUX_FIELD_SEPARATOR)) return line.split(TMUX_FIELD_SEPARATOR);
+  if (line.includes("\t")) return line.split("\t");
+  return line.trim().split(/\s+/);
+}
+
 function parseSessions(output) {
   if (!output) return [];
 
   return output.split("\n").filter(Boolean).map((line) => {
-    const fields = line.includes(TMUX_FIELD_SEPARATOR) ? line.split(TMUX_FIELD_SEPARATOR) : line.split("\t");
+    const fields = splitTmuxFields(line);
     const [id, name, windows, attached, created, activity] = fields;
     return {
       id,
@@ -227,7 +233,7 @@ function parseAttachedSessions(output) {
   if (!output) return attached;
 
   output.split("\n").filter(Boolean).forEach((line) => {
-    const fields = line.includes(TMUX_FIELD_SEPARATOR) ? line.split(TMUX_FIELD_SEPARATOR) : line.split("\t");
+    const fields = splitTmuxFields(line);
     const [id, name] = fields;
     if (id) attached.ids.add(id);
     if (name) attached.names.add(name);
@@ -256,29 +262,40 @@ function parseAttachedSessionNamesFromList(output) {
 function parseWindows(output) {
   if (!output) return [];
 
-  return output.split("\n").filter(Boolean).map((line) => {
-    const [index, name, active, panes] = line.split("\t");
-    return {
-      index: Number(index),
-      name,
+  return output.split("\n").filter(Boolean).reduce((windows, line) => {
+    const [index, name, active, panes] = splitTmuxFields(line);
+    const windowIndex = Number(index);
+
+    if (!Number.isInteger(windowIndex) || windowIndex < 0) return windows;
+
+    const paneCount = Number(panes);
+    windows.push({
+      index: windowIndex,
+      name: name || "",
       active: active === "1",
-      panes: Number(panes || 0)
-    };
-  });
+      panes: Number.isInteger(paneCount) && paneCount >= 0 ? paneCount : 0
+    });
+
+    return windows;
+  }, []);
+}
+
+function formatTmuxFields(fields) {
+  return fields.join(TMUX_FIELD_SEPARATOR);
 }
 
 async function listSessions() {
   const result = await runTmux([
     "list-sessions",
     "-F",
-    [
+    formatTmuxFields([
       "#{session_id}",
       "#{session_name}",
       "#{session_windows}",
       "#{session_attached}",
       "#{session_created_string}",
       "#{session_activity_string}"
-    ].join(TMUX_FIELD_SEPARATOR)
+    ])
   ]);
 
   if (!result.ok && /no server running|failed to connect/i.test(result.stderr)) {
@@ -291,7 +308,7 @@ async function listSessions() {
   const clients = await runTmux([
     "list-clients",
     "-F",
-    ["#{session_id}", "#{client_session}"].join(TMUX_FIELD_SEPARATOR)
+    formatTmuxFields(["#{session_id}", "#{client_session}"])
   ]);
   if (clients.ok) {
     const attachedSessions = parseAttachedSessions(clients.stdout);
@@ -319,7 +336,12 @@ async function listWindows(sessionName) {
     "-t",
     sessionName,
     "-F",
-    "#{window_index}\t#{window_name}\t#{window_active}\t#{window_panes}"
+    formatTmuxFields([
+      "#{window_index}",
+      "#{window_name}",
+      "#{window_active}",
+      "#{window_panes}"
+    ])
   ]);
 
   return { ...result, windows: result.ok ? parseWindows(result.stdout) : [] };

@@ -21,11 +21,14 @@ const selectedTerminalLabel = document.querySelector("#selectedTerminalLabel");
 const terminalOptions = document.querySelector("#terminalOptions");
 const controlWindowButtons = document.querySelector("#controlWindowButtons");
 const chooseTreeButton = document.querySelector("#chooseTreeButton");
+const refreshWindowsButton = document.querySelector("#refreshWindowsButton");
 const backButton = document.querySelector("#backButton");
 const commandToggle = document.querySelector("#commandToggle");
 const commandExamples = document.querySelector("#commandExamples");
+const commandConsole = document.querySelector("#commandConsole");
+const clearConsoleButton = document.querySelector("#clearConsoleButton");
 
-let activeControlSession = "";
+let activeControlSession = null;
 let tmuxAvailable = false;
 
 function showAlert(message, type = "error") {
@@ -55,7 +58,7 @@ function setActiveNav(viewName) {
 }
 
 function showSessionsView() {
-  activeControlSession = "";
+  activeControlSession = null;
   sessionsView.hidden = false;
   controlView.hidden = true;
   settingsView.hidden = true;
@@ -64,7 +67,7 @@ function showSessionsView() {
 }
 
 function showSettingsView() {
-  activeControlSession = "";
+  activeControlSession = null;
   sessionsView.hidden = true;
   controlView.hidden = true;
   settingsView.hidden = false;
@@ -82,6 +85,22 @@ function describeSession(session) {
 function describeWindow(windowInfo) {
   const panes = windowInfo.panes === 1 ? "1 pane" : `${windowInfo.panes} panes`;
   return `${windowInfo.index}: ${windowInfo.name || "window"} · ${panes}`;
+}
+
+function shellQuote(value) {
+  const text = String(value || "");
+  return /^[A-Za-z0-9_./:=+-]+$/.test(text) ? text : `'${text.replace(/'/g, "'\\''")}'`;
+}
+
+function formatTmuxCommand(args) {
+  return `tmux ${args.map(shellQuote).join(" ")}`;
+}
+
+function logCommand(command) {
+  const line = `$ ${command}`;
+  console.log(`[tmux-helper] ${line}`);
+  commandConsole.textContent = commandConsole.textContent ? `${commandConsole.textContent}\n${line}` : line;
+  commandConsole.scrollTop = commandConsole.scrollHeight;
 }
 
 function toggleCardForm(card, formName, initialValue = "") {
@@ -133,11 +152,11 @@ function renderSessions(sessions) {
     attachButton.textContent = session.attached ? "Control" : "Attach";
     attachButton.addEventListener("click", () => {
       if (session.attached) {
-        openControlView(session.name);
+        openControlView(session);
         return;
       }
 
-      attachSession(session.name);
+      attachSession(session.id || session.name);
     });
 
     node.querySelector('[data-action="newWindow"]').addEventListener("click", () => {
@@ -146,33 +165,37 @@ function renderSessions(sessions) {
     node.querySelector('[data-action="rename"]').addEventListener("click", () => {
       toggleCardForm(node, "rename", session.name);
     });
-    node.querySelector('[data-action="detach"]').addEventListener("click", () => detachSession(session.name));
+    node.querySelector('[data-action="detach"]').addEventListener("click", () => detachSession(session.id || session.name));
 
     node.querySelector('[data-form="newWindow"]').addEventListener("submit", (event) => {
       event.preventDefault();
-      createWindow(session.name, new FormData(event.currentTarget).get("windowName"));
+      createWindow(session.id || session.name, new FormData(event.currentTarget).get("windowName"));
     });
 
     node.querySelector('[data-form="rename"]').addEventListener("submit", (event) => {
       event.preventDefault();
-      renameSession(session.name, new FormData(event.currentTarget).get("sessionName"));
+      renameSession(session.id || session.name, new FormData(event.currentTarget).get("sessionName"));
     });
 
     sessionsEl.append(node);
   }
 }
 
-async function openControlView(sessionName) {
-  activeControlSession = sessionName;
+async function openControlView(session) {
+  activeControlSession = {
+    id: session.id || session.name,
+    name: session.name
+  };
+  const sessionTarget = activeControlSession.id;
   sessionsView.hidden = true;
   controlView.hidden = false;
   settingsView.hidden = true;
   setActiveNav("sessions");
-  controlTitle.textContent = sessionName;
-  controlSummary.textContent = "Loading session windows...";
+  controlTitle.textContent = activeControlSession.name;
+  controlSummary.textContent = "Loading window chooser...";
   showAlert("");
   showControlAlert("");
-  await loadControlWindows(sessionName);
+  await loadControlWindows(sessionTarget);
 }
 
 function closeControlView() {
@@ -182,6 +205,7 @@ function closeControlView() {
 }
 
 async function loadControlWindows(sessionName) {
+  logCommand(formatTmuxCommand(["list-windows", "-t", sessionName]));
   controlWindowButtons.textContent = "Loading windows...";
 
   const result = await window.tmuxHelper.listWindows(sessionName);
@@ -201,12 +225,13 @@ async function loadControlWindows(sessionName) {
   }
 
   const count = result.windows.length;
-  controlSummary.textContent = count === 1 ? "1 window available" : `${count} windows available`;
+  controlSummary.textContent = count === 1 ? "Choose from 1 window" : `Choose from ${count} windows`;
 
   for (const windowInfo of result.windows) {
     const button = document.createElement("button");
     button.type = "button";
-    button.className = windowInfo.active ? "" : "secondary";
+    button.className = windowInfo.active ? "window-button window-button--active" : "window-button secondary";
+    button.setAttribute("aria-pressed", String(windowInfo.active));
     button.textContent = describeWindow(windowInfo);
     button.addEventListener("click", () => selectWindow(sessionName, windowInfo.index));
     controlWindowButtons.append(button);
@@ -221,6 +246,7 @@ async function refreshSessions() {
   }
 
   showAlert("");
+  logCommand(formatTmuxCommand(["list-sessions"]));
   refreshButton.disabled = true;
   summaryEl.textContent = "Refreshing sessions...";
 
@@ -241,6 +267,7 @@ async function refreshSessions() {
 }
 
 async function createSession(name) {
+  logCommand(formatTmuxCommand(["new-session", "-d", "-s", name]));
   const result = await window.tmuxHelper.createSession(name);
   if (!result.ok) {
     showAlert(result.stderr || "Could not create the session.");
@@ -253,6 +280,7 @@ async function createSession(name) {
 async function renameSession(currentName, nextName) {
   if (!nextName || nextName === currentName) return;
 
+  logCommand(formatTmuxCommand(["rename-session", "-t", currentName, nextName]));
   const result = await window.tmuxHelper.renameSession(currentName, nextName);
   if (!result.ok) {
     showAlert(result.stderr || "Could not rename the session.");
@@ -263,6 +291,9 @@ async function renameSession(currentName, nextName) {
 }
 
 async function createWindow(sessionName, windowName) {
+  const args = ["new-window", "-t", sessionName];
+  if (windowName) args.push("-n", windowName);
+  logCommand(formatTmuxCommand(args));
   const result = await window.tmuxHelper.newWindow(sessionName, windowName);
   if (!result.ok) {
     showAlert(result.stderr || "Could not create the tmux window.");
@@ -273,6 +304,7 @@ async function createWindow(sessionName, windowName) {
 }
 
 async function detachSession(sessionName) {
+  logCommand(formatTmuxCommand(["detach-client", "-s", sessionName]));
   const result = await window.tmuxHelper.detachSession(sessionName);
   if (!result.ok) {
     showAlert(result.stderr || "Could not detach the session.");
@@ -284,27 +316,32 @@ async function detachSession(sessionName) {
 }
 
 async function chooseTree(sessionName) {
+  logCommand(formatTmuxCommand(["choose-tree", "-t", sessionName]));
   const result = await window.tmuxHelper.chooseTree(sessionName);
   if (!result.ok) {
     showControlAlert(result.stderr || "Could not open tmux choose-tree.");
     return;
   }
 
-  showControlAlert(`Opened choose-tree for ${sessionName}.`, "info");
+  const sessionLabel = activeControlSession ? activeControlSession.name : sessionName;
+  showControlAlert(`Opened choose-tree for ${sessionLabel}.`, "info");
 }
 
 async function selectWindow(sessionName, windowIndex) {
+  logCommand(formatTmuxCommand(["select-window", "-t", `${sessionName}:${windowIndex}`]));
   const result = await window.tmuxHelper.selectWindow(sessionName, windowIndex);
   if (!result.ok) {
     showControlAlert(result.stderr || "Could not select this tmux window.");
     return;
   }
 
-  showControlAlert(`Selected ${sessionName}:${windowIndex}.`, "info");
+  const sessionLabel = activeControlSession ? activeControlSession.name : sessionName;
+  showControlAlert(`Selected ${sessionLabel}:${windowIndex}.`, "info");
   await loadControlWindows(sessionName);
 }
 
 async function attachSession(sessionName) {
+  logCommand(formatTmuxCommand(["attach-session", "-t", sessionName]));
   const result = await window.tmuxHelper.attach(sessionName);
   if (!result.ok) {
     showAlert(result.stderr || "Could not open a terminal for this session.");
@@ -396,9 +433,16 @@ sessionsNavButton.addEventListener("click", showSessionsView);
 settingsNavButton.addEventListener("click", showSettingsView);
 selectTmuxButton.addEventListener("click", chooseTmuxPath);
 backButton.addEventListener("click", closeControlView);
+clearConsoleButton.addEventListener("click", () => {
+  commandConsole.textContent = "";
+});
 chooseTreeButton.addEventListener("click", () => {
   if (!activeControlSession) return;
-  chooseTree(activeControlSession);
+  chooseTree(activeControlSession.id);
+});
+refreshWindowsButton.addEventListener("click", () => {
+  if (!activeControlSession) return;
+  loadControlWindows(activeControlSession.id);
 });
 
 commandToggle.addEventListener("click", () => {
@@ -418,6 +462,7 @@ terminalToggle.addEventListener("click", () => {
 document.querySelectorAll(".command-row").forEach((row) => {
   const command = row.dataset.command;
   row.querySelector("[data-copy]").addEventListener("click", async () => {
+    logCommand(command);
     await window.tmuxHelper.copyCommand(command);
     showAlert(`Copied: ${command}`, "info");
   });

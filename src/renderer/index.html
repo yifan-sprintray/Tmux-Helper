@@ -62,6 +62,14 @@
             </div>
           </div>
         </section>
+
+        <section class="console-panel" aria-label="Command console">
+          <div class="console-panel__header">
+            <h2>Console</h2>
+            <button id="clearConsoleButton" class="secondary" type="button">Clear</button>
+          </div>
+          <pre id="commandConsole" aria-live="polite"></pre>
+        </section>
       </aside>
 
       <section class="workspace">
@@ -91,10 +99,13 @@
           <div class="control-surface">
             <div class="control-surface__header">
               <div>
-                <h3>Controls</h3>
-                <p>Run commands against the attached tmux session.</p>
+                <h3>Choose window</h3>
+                <p>Select the active tmux window for this session.</p>
               </div>
-              <button id="chooseTreeButton">choose-tree</button>
+              <div class="control-surface__actions">
+                <button id="chooseTreeButton" type="button">choose-tree</button>
+                <button id="refreshWindowsButton" class="secondary" type="button">Refresh</button>
+              </div>
             </div>
             <div id="controlWindowButtons" class="window-buttons"></div>
           </div>
