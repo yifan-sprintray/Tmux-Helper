@@ -108,6 +108,31 @@ Then I'll give you a project to work on.</code></pre>
                     </button>
                   </div>
                 </li>
+                <li>
+                  <h3>Start project task</h3>
+                  <div class="setup-prompt">
+                    <pre><code>I need you to build a [prefix] application. The specifications are in [path]
+
+--
+
+Please:
+
+- Create a frontend team (PM + Developer)
+- Create a backend team (PM + Developer)
+- Create an Auth Team (PM + Developer)
+- Have them build according to the specs
+- Check on both teams every 15 minutes
+- Ensure commits for each task phase
+
+Start [all / both] team(s) on [task phase] simultaneously</code></pre>
+                    <button class="secondary setup-prompt__copy" type="button" data-copy-prompt aria-label="Copy prompt" title="Copy prompt">
+                      <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+                        <path d="M9 8a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2V8Z"></path>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                      </svg>
+                    </button>
+                  </div>
+                </li>
               </ol>
             </div>
           </section>
@@ -260,6 +285,6 @@ Then I'll give you a project to work on.</code></pre>
       </article>
     </template>
 
-    <script src="./renderer.js"></script>
+    <script type="module" src="./renderer.js"></script>
   </body>
 </html>
