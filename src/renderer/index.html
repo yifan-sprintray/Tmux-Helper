@@ -22,54 +22,135 @@
           <button id="settingsNavButton" class="nav-button secondary" type="button">Settings</button>
         </nav>
 
-        <form id="createSessionForm" class="panel">
-          <label for="sessionName">New session</label>
-          <div class="inline-form">
-            <input id="sessionName" name="sessionName" autocomplete="off" placeholder="project-api" />
-            <button type="submit">Create</button>
-          </div>
-        </form>
+        <div class="explorer-sections" aria-label="Sidebar sections">
+          <section class="explorer-section">
+            <button id="newSessionToggle" class="explorer-toggle" type="button" aria-expanded="true" aria-controls="createSessionForm">
+              <span aria-hidden="true">v</span>
+              <strong>New Session</strong>
+            </button>
+            <form id="createSessionForm" class="explorer-panel panel" aria-label="New session" aria-hidden="false">
+              <label for="sessionName">Session name</label>
+              <div class="inline-form">
+                <input id="sessionName" name="sessionName" autocomplete="off" placeholder="project-api" />
+                <button type="submit">Create</button>
+              </div>
+            </form>
+          </section>
 
-        <section class="command-list" aria-label="Command examples">
-          <button id="commandToggle" class="command-toggle secondary" type="button" aria-expanded="false">
-            <span>Command examples</span>
-            <span aria-hidden="true">Show</span>
-          </button>
-          <div id="commandExamples" class="command-examples" hidden>
-            <div class="command-row" data-command="tmux new-session -s project">
-              <code>tmux new-session -s project</code>
-              <button data-copy class="secondary">Copy</button>
+          <section class="explorer-section">
+            <button id="commandToggle" class="explorer-toggle" type="button" aria-expanded="false" aria-controls="commandExamples">
+              <span aria-hidden="true">&gt;</span>
+              <strong>Command Examples</strong>
+            </button>
+            <div id="commandExamples" class="explorer-panel command-examples" hidden>
+              <div class="command-row" data-command="tmux new-session -s project">
+                <code>tmux new-session -s project</code>
+                <button data-copy class="secondary">Copy</button>
+              </div>
+              <div class="command-row" data-command="tmux attach-session -t project">
+                <code>tmux attach-session -t project</code>
+                <button data-copy class="secondary">Copy</button>
+              </div>
+              <div class="command-row" data-command="tmux list-sessions">
+                <code>tmux list-sessions</code>
+                <button data-copy class="secondary">Copy</button>
+              </div>
+              <div class="command-row" data-command="tmux new-window -n logs">
+                <code>tmux new-window -n logs</code>
+                <button data-copy class="secondary">Copy</button>
+              </div>
+              <div class="command-row" data-command="tmux split-window -h">
+                <code>tmux split-window -h</code>
+                <button data-copy class="secondary">Copy</button>
+              </div>
+              <div class="command-row" data-command="tmux detach-client -s project">
+                <code>tmux detach-client -s project</code>
+                <button data-copy class="secondary">Copy</button>
+              </div>
             </div>
-            <div class="command-row" data-command="tmux attach-session -t project">
-              <code>tmux attach-session -t project</code>
-              <button data-copy class="secondary">Copy</button>
-            </div>
-            <div class="command-row" data-command="tmux list-sessions">
-              <code>tmux list-sessions</code>
-              <button data-copy class="secondary">Copy</button>
-            </div>
-            <div class="command-row" data-command="tmux new-window -n logs">
-              <code>tmux new-window -n logs</code>
-              <button data-copy class="secondary">Copy</button>
-            </div>
-            <div class="command-row" data-command="tmux split-window -h">
-              <code>tmux split-window -h</code>
-              <button data-copy class="secondary">Copy</button>
-            </div>
-            <div class="command-row" data-command="tmux detach-client -s project">
-              <code>tmux detach-client -s project</code>
-              <button data-copy class="secondary">Copy</button>
-            </div>
-          </div>
-        </section>
+          </section>
 
-        <section class="console-panel" aria-label="Command console">
-          <div class="console-panel__header">
-            <h2>Console</h2>
-            <button id="clearConsoleButton" class="secondary" type="button">Clear</button>
-          </div>
-          <pre id="commandConsole" aria-live="polite"></pre>
-        </section>
+          <section id="orchestratorSetupSection" class="explorer-section" hidden>
+            <button id="orchestratorSetupToggle" class="explorer-toggle" type="button" aria-expanded="false" aria-controls="orchestratorSetupPanel">
+              <span aria-hidden="true">&gt;</span>
+              <strong>Tmux Orchestrator Setup</strong>
+            </button>
+            <div id="orchestratorSetupPanel" class="explorer-panel setup-content" hidden>
+              <p class="setup-content__hint">Run following prompts with claude-code</p>
+              <ol>
+                <li>
+                  <h3>Test orchestration</h3>
+                  <div class="setup-prompt">
+                    <pre><code>You are an AI orchestrator. First, let's test that everything works:
+
+- Check what tmux window you're in: Run: `tmux display-message -p "#{session_name}:#{window_index}"`
+- Test the scheduling script: Run: `./schedule_with_note.sh 1 "Test message"`
+- If that works, tell me "Setup successful!"
+
+Then I'll give you a project to work on.</code></pre>
+                    <button class="secondary setup-prompt__copy" type="button" data-copy-prompt aria-label="Copy prompt" title="Copy prompt">
+                      <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+                        <path d="M9 8a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2V8Z"></path>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                      </svg>
+                    </button>
+                  </div>
+                </li>
+                <li>
+                  <h3>Update command usage</h3>
+                  <div class="setup-prompt">
+                    <pre><code>Please look through all the commands and replace the `claude` command with `claude --dangerously-skip-permissions`</code></pre>
+                    <button class="secondary setup-prompt__copy" type="button" data-copy-prompt aria-label="Copy prompt" title="Copy prompt">
+                      <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+                        <path d="M9 8a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2V8Z"></path>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                      </svg>
+                    </button>
+                  </div>
+                </li>
+                <li>
+                  <h3>Start project task</h3>
+                  <div class="setup-prompt">
+                    <pre><code>I need you to build a [prefix] application. The specifications are in [path]
+
+--
+
+Please:
+
+- Create a frontend team (PM + Developer)
+- Create a backend team (PM + Developer)
+- Create an Auth Team (PM + Developer)
+- Have them build according to the specs
+- Check on both teams every 15 minutes
+- Ensure commits for each task phase
+
+Start [all / both] team(s) on [task phase] simultaneously</code></pre>
+                    <button class="secondary setup-prompt__copy" type="button" data-copy-prompt aria-label="Copy prompt" title="Copy prompt">
+                      <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+                        <path d="M9 8a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2V8Z"></path>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                      </svg>
+                    </button>
+                  </div>
+                </li>
+              </ol>
+            </div>
+          </section>
+
+          <section class="explorer-section">
+            <button id="consoleToggle" class="explorer-toggle" type="button" aria-expanded="false" aria-controls="consolePanel">
+              <span aria-hidden="true">&gt;</span>
+              <strong>Console</strong>
+            </button>
+            <div id="consolePanel" class="explorer-panel console-panel" aria-label="Command console" aria-hidden="true" hidden>
+              <div class="console-panel__header">
+                <span class="console-panel__meta">Command output</span>
+                <button id="clearConsoleButton" class="secondary" type="button">Clear</button>
+              </div>
+              <pre id="commandConsole" aria-live="polite"></pre>
+            </div>
+          </section>
+        </div>
       </aside>
 
       <section class="workspace">
@@ -79,7 +160,10 @@
               <h2>Sessions</h2>
               <p id="summary">Loading current tmux sessions...</p>
             </div>
-            <button id="refreshButton" class="secondary">Refresh</button>
+            <div class="toolbar-actions">
+              <button id="orchestratorChip" class="indicator-chip" type="button" data-state="off">Orchestrator Off</button>
+              <button id="refreshButton" class="secondary">Refresh</button>
+            </div>
           </header>
 
           <div id="alert" class="alert" hidden></div>
@@ -128,7 +212,7 @@
                 <p>Executable path used for every tmux command.</p>
               </div>
               <div class="settings-control settings-control--path">
-                <input id="tmuxPathInput" type="text" readonly value="Checking tmux..." aria-label="tmux executable path" />
+                <input id="tmuxPathInput" class="path-display-input" type="text" readonly aria-readonly="true" autocomplete="off" spellcheck="false" value="Checking tmux..." aria-label="tmux executable path" />
                 <button id="selectTmuxButton" type="button">Choose Path</button>
               </div>
             </section>
@@ -142,6 +226,24 @@
                 <span aria-hidden="true">Show</span>
               </button>
               <div id="terminalOptions" class="terminal-options" hidden></div>
+            </section>
+
+            <section class="settings-row">
+              <div>
+                <h3>Tmux Orchestrator</h3>
+                <p>Enable orchestration after selecting a folder with the required scripts.</p>
+              </div>
+              <div class="settings-control orchestrator-control">
+                <label class="switch-control">
+                  <input id="orchestratorToggle" type="checkbox" role="switch" />
+                  <span class="switch-track" aria-hidden="true"></span>
+                  <span id="orchestratorToggleLabel">Off</span>
+                </label>
+                <div class="settings-control settings-control--path">
+                  <input id="orchestratorPathInput" class="path-display-input" type="text" readonly aria-readonly="true" autocomplete="off" spellcheck="false" value="No orchestrator folder selected" aria-label="Tmux Orchestrator folder" />
+                  <button id="selectOrchestratorButton" type="button" hidden>Choose Path</button>
+                </div>
+              </div>
             </section>
           </div>
         </section>
@@ -183,6 +285,6 @@
       </article>
     </template>
 
-    <script src="./renderer.js"></script>
+    <script type="module" src="./renderer.js"></script>
   </body>
 </html>
