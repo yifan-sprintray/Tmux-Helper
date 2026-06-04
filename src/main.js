@@ -19,6 +19,14 @@ const COMMAND_ENV = {
   ].filter((entry, index, entries) => entries.indexOf(entry) === index).join(path.delimiter)
 };
 const TMUX_FIELD_SEPARATOR = "|||";
+const ORCHESTRATOR_REQUIRED_FILES = [
+  "schedule_with_note.sh",
+  "send-claude-message.sh"
+];
+const ORCHESTRATOR_REPO = {
+  https: "https://github.com/Jedward23/Tmux-Orchestrator.git",
+  ssh: "git@github.com:Jedward23/Tmux-Orchestrator.git"
+};
 const GHOSTTY_APP_CANDIDATES = [
   process.env.GHOSTTY_APP_PATH,
   "/Applications/Ghostty.app",
@@ -26,6 +34,14 @@ const GHOSTTY_APP_CANDIDATES = [
 ].filter(Boolean);
 let selectedTmuxPath = "";
 let selectedTerminal = "ghostty";
+let orchestratorEnabled = false;
+let orchestratorPath = "";
+let orchestratorGitStatus = {
+  isGitRepo: false,
+  checking: false,
+  updateAvailable: false,
+  error: ""
+};
 
 function isExecutable(filePath) {
   try {
@@ -60,6 +76,10 @@ const TERMINAL_OPTIONS = {
     { id: "x-terminal-emulator", label: "System terminal" }
   ]
 };
+const DEFAULT_TERMINAL_BY_PLATFORM = {
+  darwin: "terminal",
+  linux: "x-terminal-emulator"
+};
 
 function getConfigPath() {
   return path.join(app.getPath("userData"), "settings.json");
@@ -75,7 +95,12 @@ function getTerminalOptions() {
 
 function normalizeTerminal(terminalId) {
   const options = getTerminalOptions();
-  return options.some((option) => option.id === terminalId) ? terminalId : options[0].id;
+  const defaultTerminal = DEFAULT_TERMINAL_BY_PLATFORM[process.platform] || options[0].id;
+  return options.some((option) => option.id === terminalId) ? terminalId : defaultTerminal;
+}
+
+function settingsFileExists() {
+  return fs.existsSync(getConfigPath());
 }
 
 function readSettings() {
@@ -83,17 +108,21 @@ function readSettings() {
     const config = JSON.parse(fs.readFileSync(getConfigPath(), "utf8"));
     return {
       tmuxPath: typeof config.tmuxPath === "string" ? config.tmuxPath : "",
-      terminal: normalizeTerminal(config.terminal)
+      terminal: normalizeTerminal(config.terminal),
+      orchestratorEnabled: Boolean(config.orchestratorEnabled),
+      orchestratorPath: typeof config.orchestratorPath === "string" ? config.orchestratorPath : ""
     };
   } catch {
     try {
       const legacyConfig = JSON.parse(fs.readFileSync(getLegacyTmuxConfigPath(), "utf8"));
       return {
         tmuxPath: typeof legacyConfig.tmuxPath === "string" ? legacyConfig.tmuxPath : "",
-        terminal: normalizeTerminal("")
+        terminal: normalizeTerminal(""),
+        orchestratorEnabled: false,
+        orchestratorPath: ""
       };
     } catch {
-      return { tmuxPath: "", terminal: normalizeTerminal("") };
+      return { tmuxPath: "", terminal: normalizeTerminal(""), orchestratorEnabled: false, orchestratorPath: "" };
     }
   }
 }
@@ -102,16 +131,319 @@ function writeSettings() {
   fs.mkdirSync(app.getPath("userData"), { recursive: true });
   fs.writeFileSync(getConfigPath(), JSON.stringify({
     tmuxPath: selectedTmuxPath,
-    terminal: selectedTerminal
+    terminal: selectedTerminal,
+    orchestratorEnabled,
+    orchestratorPath
   }, null, 2));
+}
+
+function initializeFirstStartSettings() {
+  if (settingsFileExists()) return;
+
+  const tmuxStatus = getTmuxStatus();
+  if (tmuxStatus.ok && tmuxStatus.path) {
+    selectedTmuxPath = tmuxStatus.path;
+  }
+
+  writeSettings();
+}
+
+function resetOrchestratorGitStatus() {
+  orchestratorGitStatus = {
+    isGitRepo: false,
+    checking: false,
+    updateAvailable: false,
+    error: ""
+  };
+}
+
+function runGit(args, cwd) {
+  return new Promise((resolve) => {
+    const child = spawn("git", args, {
+      cwd,
+      env: COMMAND_ENV,
+      windowsHide: true
+    });
+
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    child.on("error", (error) => {
+      resolve({ ok: false, stdout: stdout.trim(), stderr: error.message, code: 1 });
+    });
+
+    child.on("close", (code) => {
+      resolve({ ok: code === 0, stdout: stdout.trim(), stderr: stderr.trim(), code });
+    });
+  });
+}
+
+async function checkOrchestratorUpdates() {
+  const folderPath = getActiveOrchestratorPath();
+  if (!folderPath) {
+    resetOrchestratorGitStatus();
+    return getOrchestratorStatus();
+  }
+
+  orchestratorGitStatus = {
+    isGitRepo: false,
+    checking: true,
+    updateAvailable: false,
+    error: ""
+  };
+  notifyOrchestratorStatusChanged();
+
+  const repo = await runGit(["rev-parse", "--is-inside-work-tree"], folderPath);
+  if (!repo.ok || repo.stdout !== "true") {
+    resetOrchestratorGitStatus();
+    notifyOrchestratorStatusChanged();
+    return getOrchestratorStatus();
+  }
+
+  const fetch = await runGit(["fetch"], folderPath);
+  if (!fetch.ok) {
+    orchestratorGitStatus = {
+      isGitRepo: true,
+      checking: false,
+      updateAvailable: false,
+      error: fetch.stderr || fetch.stdout || "git fetch failed."
+    };
+    notifyOrchestratorStatusChanged();
+    return getOrchestratorStatus();
+  }
+
+  const upstream = await runGit(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], folderPath);
+  if (!upstream.ok || !upstream.stdout) {
+    orchestratorGitStatus = {
+      isGitRepo: true,
+      checking: false,
+      updateAvailable: false,
+      error: "No upstream branch is configured."
+    };
+    notifyOrchestratorStatusChanged();
+    return getOrchestratorStatus();
+  }
+
+  const behind = await runGit(["rev-list", "--count", `HEAD..${upstream.stdout}`], folderPath);
+  const behindCount = Number(behind.stdout);
+  orchestratorGitStatus = {
+    isGitRepo: true,
+    checking: false,
+    updateAvailable: behind.ok && Number.isInteger(behindCount) && behindCount > 0,
+    error: behind.ok ? "" : behind.stderr || "Could not compare orchestrator branch with upstream."
+  };
+  notifyOrchestratorStatusChanged();
+  return getOrchestratorStatus();
+}
+
+async function updateOrchestrator() {
+  let status = getOrchestratorStatus();
+  if (!status.active) {
+    return { ok: false, error: "Complete Tmux Orchestrator settings before updating.", status };
+  }
+
+  if (!status.updateAvailable) {
+    status = await checkOrchestratorUpdates();
+    if (!status.updateAvailable) {
+      return { ok: true, status };
+    }
+  }
+
+  const folderPath = status.path;
+  orchestratorGitStatus = {
+    ...orchestratorGitStatus,
+    checking: true,
+    error: ""
+  };
+  notifyOrchestratorStatusChanged();
+
+  const pull = await runGit(["pull", "--ff-only"], folderPath);
+  if (!pull.ok) {
+    orchestratorGitStatus = {
+      ...orchestratorGitStatus,
+      checking: false,
+      error: pull.stderr || pull.stdout || "git pull failed."
+    };
+    notifyOrchestratorStatusChanged();
+    return { ok: false, error: orchestratorGitStatus.error, status: getOrchestratorStatus() };
+  }
+
+  const nextStatus = await checkOrchestratorUpdates();
+  return { ok: true, status: nextStatus };
+}
+
+function notifyOrchestratorStatusChanged() {
+  const status = getOrchestratorStatus();
+  BrowserWindow.getAllWindows().forEach((window) => {
+    window.webContents.send("orchestrator:statusChanged", status);
+  });
 }
 
 function getSettings() {
   return {
     tmux: getTmuxStatus(),
     terminal: selectedTerminal,
-    terminalOptions: getTerminalOptions()
+    terminalOptions: getTerminalOptions(),
+    orchestrator: getOrchestratorStatus()
   };
+}
+
+function isValidOrchestratorFolder(folderPath) {
+  if (!folderPath || !path.isAbsolute(folderPath)) return false;
+
+  return ORCHESTRATOR_REQUIRED_FILES.every((fileName) => {
+    try {
+      const scriptPath = path.join(folderPath, fileName);
+      return fs.statSync(scriptPath).isFile();
+    } catch {
+      return false;
+    }
+  });
+}
+
+function getOrchestratorStatus() {
+  if (orchestratorPath && !isValidOrchestratorFolder(orchestratorPath)) {
+    orchestratorPath = "";
+    writeSettings();
+  }
+
+  const configured = Boolean(orchestratorPath);
+
+  return {
+    enabled: orchestratorEnabled,
+    active: orchestratorEnabled && configured,
+    configured,
+    path: orchestratorPath,
+    valid: configured,
+    updateAvailable: orchestratorGitStatus.updateAvailable,
+    git: orchestratorGitStatus,
+    requiredFiles: ORCHESTRATOR_REQUIRED_FILES
+  };
+}
+
+function getActiveOrchestratorPath() {
+  const status = getOrchestratorStatus();
+  return status.active ? status.path : "";
+}
+
+function withWorkingDirectory(command, workingDirectory) {
+  if (!workingDirectory) return command;
+  return `cd ${shellSingleQuote(workingDirectory)} && ${command}`;
+}
+
+async function chooseOrchestratorFolder(parentWindow) {
+  const { canceled, filePaths } = await dialog.showOpenDialog(parentWindow, {
+    title: "Select Tmux Orchestrator folder",
+    buttonLabel: "Use Folder",
+    properties: ["openDirectory"]
+  });
+
+  if (canceled || !filePaths.length) return { ok: false, canceled: true };
+
+  const folderPath = filePaths[0];
+  if (isValidOrchestratorFolder(folderPath)) {
+    orchestratorPath = folderPath;
+    orchestratorEnabled = true;
+    resetOrchestratorGitStatus();
+    writeSettings();
+    return { ok: true, status: getOrchestratorStatus() };
+  }
+
+  return { ok: false, invalidFolder: true, folderPath };
+}
+
+async function promptCloneOrchestrator(parentWindow) {
+  const { response } = await dialog.showMessageBox(parentWindow, {
+    type: "question",
+    buttons: ["Clone with HTTPS", "Clone with SSH", "Cancel"],
+    defaultId: 0,
+    cancelId: 2,
+    title: "Clone Tmux Orchestrator",
+    message: "The selected folder does not contain the required orchestrator scripts.",
+    detail: "Clone Tmux-Orchestrator from GitHub, then Tmux Helper will use the cloned folder."
+  });
+
+  if (response === 2) return { ok: false, canceled: true };
+
+  const repoUrl = response === 1 ? ORCHESTRATOR_REPO.ssh : ORCHESTRATOR_REPO.https;
+  const { canceled, filePaths } = await dialog.showOpenDialog(parentWindow, {
+    title: "Choose where to clone Tmux Orchestrator",
+    buttonLabel: "Clone Here",
+    properties: ["openDirectory", "createDirectory"]
+  });
+
+  if (canceled || !filePaths.length) return { ok: false, canceled: true };
+
+  const destination = path.join(filePaths[0], "Tmux-Orchestrator");
+  if (fs.existsSync(destination)) {
+    return { ok: false, error: `${destination} already exists. Select that folder or choose another parent folder.` };
+  }
+
+  const clone = spawnSync("git", ["clone", repoUrl, destination], {
+    encoding: "utf8",
+    env: COMMAND_ENV
+  });
+
+  if (clone.status !== 0) {
+    return { ok: false, error: (clone.stderr || clone.stdout || "git clone failed.").trim() };
+  }
+
+  if (!isValidOrchestratorFolder(destination)) {
+    return { ok: false, error: "Clone completed, but the required orchestrator scripts were not found." };
+  }
+
+  orchestratorPath = destination;
+  orchestratorEnabled = true;
+  resetOrchestratorGitStatus();
+  writeSettings();
+  return { ok: true, status: getOrchestratorStatus() };
+}
+
+async function setOrchestratorEnabled(parentWindow, enabled) {
+  if (!enabled) {
+    orchestratorEnabled = false;
+    resetOrchestratorGitStatus();
+    writeSettings();
+    return { ok: true, status: getOrchestratorStatus() };
+  }
+
+  if (isValidOrchestratorFolder(orchestratorPath)) {
+    orchestratorEnabled = true;
+    writeSettings();
+    return { ok: true, status: getOrchestratorStatus() };
+  }
+
+  orchestratorEnabled = false;
+  orchestratorPath = "";
+  resetOrchestratorGitStatus();
+  writeSettings();
+
+  const selectedFolder = await chooseOrchestratorFolder(parentWindow);
+  if (selectedFolder.ok || selectedFolder.canceled) return selectedFolder;
+
+  const clonedFolder = await promptCloneOrchestrator(parentWindow);
+  if (clonedFolder.ok) return clonedFolder;
+
+  orchestratorEnabled = false;
+  orchestratorPath = "";
+  resetOrchestratorGitStatus();
+  writeSettings();
+  return clonedFolder;
+}
+
+async function chooseOrchestratorPath(parentWindow) {
+  const selectedFolder = await chooseOrchestratorFolder(parentWindow);
+  if (selectedFolder.ok || selectedFolder.canceled) return selectedFolder;
+
+  return promptCloneOrchestrator(parentWindow);
 }
 
 function getTmuxStatus() {
@@ -445,7 +777,8 @@ function openIterm(command) {
 
 async function openAttachTerminal(sessionName) {
   const tmuxCommand = shellSingleQuote(findTmux());
-  const command = `PATH=${shellSingleQuote(COMMAND_ENV.PATH)} ${tmuxCommand} attach-session -t ${shellSingleQuote(sessionName)}`;
+  const attachCommand = `PATH=${shellSingleQuote(COMMAND_ENV.PATH)} ${tmuxCommand} attach-session -t ${shellSingleQuote(sessionName)}`;
+  const command = withWorkingDirectory(attachCommand, getActiveOrchestratorPath());
 
   if (process.platform === "darwin") {
     if (selectedTerminal === "terminal") return openMacTerminal(command);
@@ -454,10 +787,12 @@ async function openAttachTerminal(sessionName) {
   }
 
   if (process.platform === "linux") {
+    const workingDirectory = getActiveOrchestratorPath() || undefined;
     spawn("x-terminal-emulator", ["-e", findTmux(), "attach-session", "-t", sessionName], {
       detached: true,
       stdio: "ignore",
-      env: COMMAND_ENV
+      env: COMMAND_ENV,
+      cwd: workingDirectory
     }).unref();
     return { ok: true };
   }
@@ -488,6 +823,9 @@ app.whenReady().then(() => {
   const settings = readSettings();
   selectedTmuxPath = settings.tmuxPath;
   selectedTerminal = settings.terminal;
+  orchestratorEnabled = settings.orchestratorEnabled;
+  orchestratorPath = settings.orchestratorPath;
+  initializeFirstStartSettings();
 
   ipcMain.handle("settings:get", async () => {
     return getSettings();
@@ -497,6 +835,23 @@ app.whenReady().then(() => {
     selectedTerminal = normalizeTerminal(String(terminalId || ""));
     writeSettings();
     return getSettings();
+  });
+
+  ipcMain.handle("settings:setOrchestratorEnabled", async (event, enabled) => {
+    const result = await setOrchestratorEnabled(BrowserWindow.fromWebContents(event.sender), Boolean(enabled));
+    if (result.ok) checkOrchestratorUpdates();
+    return { ...result, settings: getSettings() };
+  });
+
+  ipcMain.handle("orchestrator:choosePath", async (event) => {
+    const result = await chooseOrchestratorPath(BrowserWindow.fromWebContents(event.sender));
+    if (result.ok) checkOrchestratorUpdates();
+    return { ...result, settings: getSettings() };
+  });
+
+  ipcMain.handle("orchestrator:update", async () => {
+    const result = await updateOrchestrator();
+    return { ...result, settings: getSettings() };
   });
 
   ipcMain.handle("tmux:status", async () => {
@@ -522,7 +877,11 @@ app.whenReady().then(() => {
       return { ok: false, stderr: "Use 1-64 characters: letters, numbers, dot, underscore, colon, or dash." };
     }
 
-    return runTmux(["new-session", "-d", "-s", cleanName]);
+    const workingDirectory = getActiveOrchestratorPath();
+    const args = ["new-session", "-d", "-s", cleanName];
+    if (workingDirectory) args.push("-c", workingDirectory);
+
+    return runTmux(args);
   });
 
   ipcMain.handle("tmux:renameSession", async (_event, currentName, nextName) => {
@@ -571,7 +930,12 @@ app.whenReady().then(() => {
       return { ok: false, stderr: "Window names may use letters, numbers, dot, underscore, colon, or dash." };
     }
 
-    return runTmux(name ? ["new-window", "-t", target, "-n", name] : ["new-window", "-t", target]);
+    const workingDirectory = getActiveOrchestratorPath();
+    const args = ["new-window", "-t", target];
+    if (name) args.push("-n", name);
+    if (workingDirectory) args.push("-c", workingDirectory);
+
+    return runTmux(args);
   });
 
   ipcMain.handle("tmux:copyCommand", (_event, command) => {
@@ -587,9 +951,13 @@ app.whenReady().then(() => {
   });
 
   createWindow();
+  checkOrchestratorUpdates();
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow();
+      checkOrchestratorUpdates();
+    }
   });
 });
 

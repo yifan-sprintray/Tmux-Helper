@@ -19,17 +19,36 @@ const tmuxPathInput = document.querySelector("#tmuxPathInput");
 const terminalToggle = document.querySelector("#terminalToggle");
 const selectedTerminalLabel = document.querySelector("#selectedTerminalLabel");
 const terminalOptions = document.querySelector("#terminalOptions");
+const orchestratorChip = document.querySelector("#orchestratorChip");
+const orchestratorToggle = document.querySelector("#orchestratorToggle");
+const orchestratorToggleLabel = document.querySelector("#orchestratorToggleLabel");
+const orchestratorPathInput = document.querySelector("#orchestratorPathInput");
+const selectOrchestratorButton = document.querySelector("#selectOrchestratorButton");
 const controlWindowButtons = document.querySelector("#controlWindowButtons");
 const chooseTreeButton = document.querySelector("#chooseTreeButton");
 const refreshWindowsButton = document.querySelector("#refreshWindowsButton");
 const backButton = document.querySelector("#backButton");
+const newSessionToggle = document.querySelector("#newSessionToggle");
 const commandToggle = document.querySelector("#commandToggle");
 const commandExamples = document.querySelector("#commandExamples");
+const orchestratorSetupSection = document.querySelector("#orchestratorSetupSection");
+const orchestratorSetupToggle = document.querySelector("#orchestratorSetupToggle");
+const orchestratorSetupPanel = document.querySelector("#orchestratorSetupPanel");
+const consoleToggle = document.querySelector("#consoleToggle");
+const consolePanel = document.querySelector("#consolePanel");
 const commandConsole = document.querySelector("#commandConsole");
 const clearConsoleButton = document.querySelector("#clearConsoleButton");
 
 let activeControlSession = null;
 let tmuxAvailable = false;
+let orchestratorChipState = "off";
+let orchestratorChipLoading = false;
+let latestOrchestratorStatus = null;
+
+for (const pathInput of [tmuxPathInput, orchestratorPathInput]) {
+  pathInput.readOnly = true;
+  pathInput.setAttribute("aria-readonly", "true");
+}
 
 function showAlert(message, type = "error") {
   alertEl.textContent = message;
@@ -94,6 +113,13 @@ function shellQuote(value) {
 
 function formatTmuxCommand(args) {
   return `tmux ${args.map(shellQuote).join(" ")}`;
+}
+
+function toggleExplorerSection(button, panel, expanded) {
+  button.setAttribute("aria-expanded", String(expanded));
+  button.querySelector("[aria-hidden]").textContent = expanded ? "v" : ">";
+  panel.hidden = !expanded;
+  panel.setAttribute("aria-hidden", String(!expanded));
 }
 
 function logCommand(command) {
@@ -385,16 +411,46 @@ function renderTerminalOptions(settings) {
   }
 }
 
+function renderOrchestratorStatus(orchestrator) {
+  latestOrchestratorStatus = orchestrator;
+  const enabled = Boolean(orchestrator && orchestrator.enabled);
+  const active = Boolean(orchestrator && orchestrator.active);
+  const configured = Boolean(orchestrator && orchestrator.configured);
+  const updateAvailable = active && Boolean(orchestrator && orchestrator.updateAvailable);
+  const checking = Boolean(orchestrator && orchestrator.git && orchestrator.git.checking);
+  const folderPath = orchestrator && orchestrator.path ? orchestrator.path : "";
+  const chipState = !enabled ? "off" : updateAvailable ? "update-available" : active ? "on" : "incomplete";
+  const chipLoading = orchestratorChipLoading || checking;
+
+  orchestratorChipState = chipState;
+  orchestratorChip.textContent = chipLoading ? "Checking orchestrator..." : chipState === "update-available" ? "Orchestrator update available" : chipState === "on" ? "Orchestrator On" : chipState === "incomplete" ? "Complete setting" : "Orchestrator Off";
+  orchestratorChip.dataset.state = chipState;
+  orchestratorChip.dataset.loading = String(chipLoading);
+  orchestratorChip.disabled = chipState === "on" || chipLoading;
+  orchestratorChip.setAttribute("aria-disabled", String(orchestratorChip.disabled));
+  orchestratorToggle.checked = enabled;
+  orchestratorToggleLabel.textContent = enabled ? "On" : "Off";
+  orchestratorPathInput.value = configured ? folderPath : "No orchestrator folder selected";
+  selectOrchestratorButton.hidden = !enabled;
+  orchestratorSetupSection.hidden = chipState === "off";
+
+  if (chipState !== "off") {
+    toggleExplorerSection(orchestratorSetupToggle, orchestratorSetupPanel, chipState === "on");
+  }
+}
+
 async function loadSettings() {
   const settings = await window.tmuxHelper.getSettings();
   updateTmuxStatus(settings.tmux);
   renderTerminalOptions(settings);
+  renderOrchestratorStatus(settings.orchestrator);
 }
 
 async function loadTmuxStatus() {
   const settings = await window.tmuxHelper.getSettings();
   updateTmuxStatus(settings.tmux);
   renderTerminalOptions(settings);
+  renderOrchestratorStatus(settings.orchestrator);
   return settings.tmux.ok;
 }
 
@@ -423,6 +479,71 @@ async function selectTerminal(terminalId) {
   showSettingsAlert(`Tmux will open in ${selectedTerminalLabel.textContent}.`, "info");
 }
 
+async function setOrchestratorEnabled(enabled) {
+  orchestratorToggle.disabled = true;
+  showSettingsAlert("");
+
+  const result = await window.tmuxHelper.setOrchestratorEnabled(enabled);
+  orchestratorToggle.disabled = false;
+  renderOrchestratorStatus(result.settings.orchestrator);
+
+  if (!result.ok) {
+    if (!result.canceled) {
+      showSettingsAlert(result.error || "Could not enable Tmux Orchestrator.");
+    }
+    return;
+  }
+
+  showSettingsAlert(result.settings.orchestrator.active ? "Tmux Orchestrator enabled." : result.settings.orchestrator.enabled ? "Complete Tmux Orchestrator settings to enable it." : "Tmux Orchestrator disabled.", "info");
+}
+
+async function chooseOrchestratorPath() {
+  selectOrchestratorButton.disabled = true;
+  showSettingsAlert("");
+
+  const result = await window.tmuxHelper.chooseOrchestratorPath();
+  selectOrchestratorButton.disabled = false;
+  renderOrchestratorStatus(result.settings.orchestrator);
+
+  if (!result.ok) {
+    if (!result.canceled) {
+      showSettingsAlert(result.error || "Could not use the selected Tmux Orchestrator folder.");
+    }
+    return;
+  }
+
+  showSettingsAlert("Updated Tmux Orchestrator folder.", "info");
+}
+
+async function activateOrchestratorChip() {
+  if (orchestratorChipState === "on" || orchestratorChipLoading) return;
+
+  if (orchestratorChipState === "update-available") {
+    orchestratorChipLoading = true;
+    renderOrchestratorStatus(latestOrchestratorStatus);
+    showAlert("Updating Tmux Orchestrator...", "info");
+
+    try {
+      const result = await window.tmuxHelper.updateOrchestrator();
+      renderOrchestratorStatus(result.settings.orchestrator);
+
+      if (!result.ok) {
+        showAlert(result.error || "Could not update Tmux Orchestrator.");
+        return;
+      }
+
+      showAlert(result.settings.orchestrator.active ? "Tmux Orchestrator is up to date." : "Complete Tmux Orchestrator settings.", "info");
+    } finally {
+      orchestratorChipLoading = false;
+      const settings = await window.tmuxHelper.getSettings();
+      renderOrchestratorStatus(settings.orchestrator);
+    }
+    return;
+  }
+
+  showSettingsView();
+}
+
 createForm.addEventListener("submit", (event) => {
   event.preventDefault();
   createSession(new FormData(createForm).get("sessionName"));
@@ -432,6 +553,8 @@ refreshButton.addEventListener("click", refreshSessions);
 sessionsNavButton.addEventListener("click", showSessionsView);
 settingsNavButton.addEventListener("click", showSettingsView);
 selectTmuxButton.addEventListener("click", chooseTmuxPath);
+selectOrchestratorButton.addEventListener("click", chooseOrchestratorPath);
+orchestratorChip.addEventListener("click", activateOrchestratorChip);
 backButton.addEventListener("click", closeControlView);
 clearConsoleButton.addEventListener("click", () => {
   commandConsole.textContent = "";
@@ -445,11 +568,24 @@ refreshWindowsButton.addEventListener("click", () => {
   loadControlWindows(activeControlSession.id);
 });
 
+newSessionToggle.addEventListener("click", () => {
+  const isExpanded = newSessionToggle.getAttribute("aria-expanded") === "true";
+  toggleExplorerSection(newSessionToggle, createForm, !isExpanded);
+});
+
 commandToggle.addEventListener("click", () => {
   const isExpanded = commandToggle.getAttribute("aria-expanded") === "true";
-  commandToggle.setAttribute("aria-expanded", String(!isExpanded));
-  commandToggle.querySelector("[aria-hidden]").textContent = isExpanded ? "Show" : "Hide";
-  commandExamples.hidden = isExpanded;
+  toggleExplorerSection(commandToggle, commandExamples, !isExpanded);
+});
+
+orchestratorSetupToggle.addEventListener("click", () => {
+  const isExpanded = orchestratorSetupToggle.getAttribute("aria-expanded") === "true";
+  toggleExplorerSection(orchestratorSetupToggle, orchestratorSetupPanel, !isExpanded);
+});
+
+consoleToggle.addEventListener("click", () => {
+  const isExpanded = consoleToggle.getAttribute("aria-expanded") === "true";
+  toggleExplorerSection(consoleToggle, consolePanel, !isExpanded);
 });
 
 terminalToggle.addEventListener("click", () => {
@@ -459,12 +595,28 @@ terminalToggle.addEventListener("click", () => {
   terminalOptions.hidden = isExpanded;
 });
 
+orchestratorToggle.addEventListener("change", () => {
+  setOrchestratorEnabled(orchestratorToggle.checked);
+});
+
+window.tmuxHelper.onOrchestratorStatusChanged((orchestrator) => {
+  renderOrchestratorStatus(orchestrator);
+});
+
 document.querySelectorAll(".command-row").forEach((row) => {
   const command = row.dataset.command;
   row.querySelector("[data-copy]").addEventListener("click", async () => {
     logCommand(command);
     await window.tmuxHelper.copyCommand(command);
     showAlert(`Copied: ${command}`, "info");
+  });
+});
+
+document.querySelectorAll("[data-copy-prompt]").forEach((button) => {
+  button.addEventListener("click", async () => {
+    const prompt = button.parentElement.querySelector("code").textContent;
+    await window.tmuxHelper.copyCommand(prompt);
+    showAlert("Copied orchestrator setup prompt.", "info");
   });
 });
 
