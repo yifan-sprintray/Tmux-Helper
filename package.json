@@ -1,6 +1,6 @@
 {
   "name": "tmux-helper",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A desktop helper for common tmux terminal commands.",
   "main": "src/main.js",
   "private": true,
